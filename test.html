@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+   <meta charset="UTF-8">
+   <title>Reverse Wherigo — Unit Tests</title>
+   <script src="reversewherigo-logic.js"></script>
+   <style>
+      body { font-family: monospace; font-size: 14px; padding: 20px; background: #f8f8f8; }
+      h1   { font-family: sans-serif; font-size: 1.2rem; margin-bottom: 12px; }
+      .pass { color: #1a7a3a; }
+      .fail { color: #c0392b; font-weight: bold; }
+      .suite { margin-top: 18px; font-weight: bold; font-family: sans-serif; font-size: .9rem;
+               text-transform: uppercase; letter-spacing: .05em; color: #555; }
+      pre { margin: 0; }
+      #summary { margin-top: 20px; padding: 10px 14px; border-radius: 6px; font-family: sans-serif; }
+      #summary.ok  { background: #d4edda; color: #155724; }
+      #summary.bad { background: #f8d7da; color: #721c24; }
+   </style>
+</head>
+<body>
+<h1>Reverse Wherigo Logic — Unit Tests</h1>
+<div id="out"></div>
+<div id="summary"></div>
+
+<script>
+   var L    = ReverseWherigoLogic;
+   var pass = 0, fail = 0;
+   var buf  = '';
+
+   function suite(name) { buf += '<div class="suite">' + name + '</div>'; }
+
+   function check(label, got, expected, tol) {
+      var ok;
+      if (typeof expected === 'number') {
+         ok = Math.abs(got - expected) <= (tol || 0);
+      } else {
+         ok = got === expected;
+      }
+      if (ok) {
+         pass++;
+         buf += '<div class="pass">✓ ' + label + '</div>';
+      } else {
+         fail++;
+         buf += '<div class="fail">✗ ' + label +
+                '<br>  got:      <pre>' + JSON.stringify(got)      + '</pre>' +
+                '<br>  expected: <pre>' + JSON.stringify(expected) + '</pre></div>';
+      }
+   }
+
+   // ── waldmeisterDecode ────────────────────────────────────────────────────
+   suite('waldmeisterDecode — Algorithm 1 (c[1]+c[4] even)');
+   // Full codes: A=414383 B=460954 C=240522
+   // Expect: N 45.65423° W 122.94844°
+   (function () {
+      var a = [4,1,4,3,8,3];
+      var b = [4,6,0,9,5,4];
+      var c = [2,4,0,5,2,2];
+      var r = L.waldmeisterDecode(a, b, c);
+      check('returns non-null',     r !== null, true);
+      check('algorithm is 1',       r && r.alg, 1);
+      check('lat = 45.65423',       r && r.lat, 45.65423, 1e-9);
+      check('lon = -122.94844',     r && r.lon, -122.94844, 1e-9);
+   }());
+
+   suite('waldmeisterDecode — Algorithm 2 (c[1]+c[4] odd)');
+   // Full codes: A=896325 B=470418 C=530422
+   // Expect: N 45.65428° W 122.94837°
+   (function () {
+      var a = [8,9,6,3,2,5];
+      var b = [4,7,0,4,1,8];
+      var c = [5,3,0,4,2,2];
+      var r = L.waldmeisterDecode(a, b, c);
+      check('returns non-null',     r !== null, true);
+      check('algorithm is 2',       r && r.alg, 2);
+      check('lat = 45.65428',       r && r.lat, 45.65428, 1e-9);
+      check('lon = -122.94837',     r && r.lon, -122.94837, 1e-9);
+   }());
+
+   suite('waldmeisterDecode — hemisphere signs');
+   (function () {
+      // a[3]=1 → N, E: expect positive lat AND lon
+      var a1 = [0,1,4,1,5,3]; var b1 = [4,6,0,9,5,4]; var c1 = [2,4,0,5,2,2];
+      var r1 = L.waldmeisterDecode(a1, b1, c1);
+      check('a[3]=1 lat is positive (N)', r1 && r1.lat > 0, true);
+      check('a[3]=1 lon is positive (E)', r1 && r1.lon > 0, true);
+
+      // a[3]=2 → S, E: negative lat, positive lon
+      var a2 = [0,1,4,2,5,3]; var r2 = L.waldmeisterDecode(a2, b1, c1);
+      check('a[3]=2 lat is negative (S)', r2 && r2.lat < 0, true);
+      check('a[3]=2 lon is positive (E)', r2 && r2.lon > 0, true);
+
+      // a[3]=4 → S, W: both negative
+      var a4 = [0,1,4,4,5,3]; var r4 = L.waldmeisterDecode(a4, b1, c1);
+      check('a[3]=4 lat is negative (S)', r4 && r4.lat < 0, true);
+      check('a[3]=4 lon is negative (W)', r4 && r4.lon < 0, true);
+
+      // a[3]=0 → invalid, returns null
+      var a0 = [0,1,4,0,5,3]; var r0 = L.waldmeisterDecode(a0, b1, c1);
+      check('a[3]=0 returns null',        r0, null);
+
+      // a[3]=5 → invalid, returns null
+      var a5 = [0,1,4,5,5,3]; var r5 = L.waldmeisterDecode(a5, b1, c1);
+      check('a[3]=5 returns null',        r5, null);
+   }());
+
+   // ── parseDDM ─────────────────────────────────────────────────────────────
+   suite('parseDDM');
+   (function () {
+      var r;
+
+      r = L.parseDDM('N 45 39.257 W 122 56.923');
+      check('basic DDM lat',  r && r.lat, 45 + 39.257/60,  1e-9);
+      check('basic DDM lon',  r && r.lon, -(122 + 56.923/60), 1e-9);
+
+      r = L.parseDDM('N 45° 39.257\' W 122° 56.923\'');
+      check('DDM with ° and \'', r && r.lat, 45 + 39.257/60, 1e-9);
+
+      r = L.parseDDM('S 33 51.520 E 151 12.600');
+      check('S/E lat negative', r && r.lat < 0, true);
+      check('S/E lon positive', r && r.lon > 0, true);
+
+      r = L.parseDDM('45.65423 -122.94844');
+      check('decimal degrees',  r && r.lat, 45.65423,   1e-6);
+      check('decimal lon neg',  r && r.lon, -122.94844, 1e-6);
+
+      r = L.parseDDM('not a coordinate');
+      check('garbage returns null', r, null);
+
+      r = L.parseDDM('');
+      check('empty returns null',   r, null);
+   }());
+
+   // ── dd2ddm ───────────────────────────────────────────────────────────────
+   suite('dd2ddm');
+   (function () {
+      check('N 45° 39.254\'',
+         L.dd2ddm(45.65423, -122.94844),
+         "N 45° 39.254' W 122° 56.906'"
+      );
+      check('N 45° 39.257\'',
+         L.dd2ddm(45.65428, -122.94837),
+         "N 45° 39.257' W 122° 56.902'"
+      );
+      check('S hemisphere',
+         L.dd2ddm(-33.85867, 151.21),
+         "S 33° 51.520' E 151° 12.600'"
+      );
+      check('zero minutes',
+         L.dd2ddm(45.0, -122.0),
+         "N 45° 00.000' W 122° 00.000'"
+      );
+   }());
+
+   // ── haversineKm ──────────────────────────────────────────────────────────
+   suite('haversineKm');
+   (function () {
+      // Same point → 0
+      check('same point is 0', L.haversineKm(45, -122, 45, -122), 0, 1e-9);
+
+      // Known: N 45° W 122° to N 45° W 123° — roughly 79 km
+      var d = L.haversineKm(45, -122, 45, -123);
+      check('1° lon at lat 45° ≈ 78.6 km', d, 78.6, 0.2);
+
+      // Known: 1° lat ≈ 111.3 km
+      var d2 = L.haversineKm(45, -122, 46, -122);
+      check('1° lat ≈ 111.2 km', d2, 111.2, 0.1);
+
+      // Small distance: 1 mile ≈ 1.609 km
+      var d3 = L.haversineKm(45.65423, -122.94844, 45.65428, -122.94837);
+      check('test samples within 50m', d3 < 0.05, true);
+   }());
+
+   // ── Output ───────────────────────────────────────────────────────────────
+   document.getElementById('out').innerHTML = buf;
+   var s = document.getElementById('summary');
+   s.textContent = pass + ' passed, ' + fail + ' failed.';
+   s.className = fail === 0 ? 'ok' : 'bad';
+</script>
+</body>
+</html>

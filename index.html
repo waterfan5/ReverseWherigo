@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+   <meta charset="UTF-8">
+   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+   <title>Reverse Wherigo Solver</title>
+   <link rel="icon" href="../Shared/favicon.ico" />
+
+   <!-- Shared theme + fonts -->
+   <link rel="preconnect" href="https://fonts.googleapis.com">
+   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500;0,9..144,600;0,9..144,700;1,9..144,600;1,9..144,700&family=Caveat+Brush&family=Inter:wght@400;500;600&display=swap">
+   <link rel="stylesheet" href="../Shared/theme.css" />
+   <link rel="stylesheet" href="reversewherigo.css" />
+
+   <!-- Hamburger nav + icon font -->
+   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css">
+   <link rel="stylesheet" href="../Shared/hamburgermenu.css" />
+   <script src="../Shared/hamburgermenu.js"></script>
+
+   <!-- Google Analytics -->
+   <script async src="https://www.googletagmanager.com/gtag/js?id=G-1T547128ND"></script>
+
+   <!-- Core decode logic (DOM-free, shared with test.html) -->
+   <script src="reversewherigo-logic.js"></script>
+
+   <script>
+      var worker      = null;
+      var lastResults = [];
+
+      function $(id) { return document.getElementById(id); }
+
+      // ── Samples ────────────────────────────────────────────────────────────
+      // Alg 1: full codes A=414383 B=460954 C=240522 → N 45° 39.254' W 122° 56.906'
+      // Alg 2: full codes A=896325 B=470418 C=530422 → N 45° 39.257' W 122° 56.902'
+      // Shown with one wildcard per code to demonstrate the partial-code solver.
+      var SAMPLES = [
+         { ref: 'N 45 39.257 W 122 56.923', dist: 1, unit: 'mi',
+           a: '41438?', b: '46095?', c: '24052?', dedupMode: 'off',
+           caption: 'Alg 1 demo — last digit of each code unknown (~1 000 combinations)' },
+         { ref: 'N 45 39.257 W 122 56.923', dist: 1, unit: 'mi',
+           a: '89632?', b: '47041?', c: '53042?', dedupMode: 'off',
+           caption: 'Alg 2 demo — last digit of each code unknown (~1 000 combinations)' },
+         { ref: 'N 45 39.257 W 122 56.923', dist: 1, unit: 'mi',
+           a: '41438?', b: '46??5?', c: '24??2?', dedupMode: 'proximity',
+           caption: 'Proximity demo — coordinates within 30 ft of each other are merged into one result' }
+      ];
+
+      function onSample(n) {
+         var s = SAMPLES[n - 1];
+         $('refCoord').value = s.ref;
+         $('maxDist').value  = s.dist;
+         $('distUnit').value = s.unit;
+         $('codeA').value      = s.a;
+         $('codeB').value      = s.b;
+         $('codeC').value      = s.c;
+         $('dedupMode').value  = s.dedupMode || 'off';
+         $('sampleCaption').textContent = s.caption;
+         onCodeInput();
+         onSolve();
+      }
+
+      // ── Wildcard counter ───────────────────────────────────────────────────
+      function countWildcards() {
+         var str = $('codeA').value + $('codeB').value + $('codeC').value;
+         var n = 0;
+         for (var i = 0; i < str.length; i++) if (str[i] === '?') n++;
+         return n;
+      }
+
+      function fmtCombos(wc) {
+         var c = Math.pow(10, wc);
+         if (c >= 1e9) return (c / 1e9).toFixed(0) + ' B';
+         if (c >= 1e6) return (c / 1e6).toFixed(0) + ' M';
+         if (c >= 1e3) return (c / 1e3).toFixed(0) + ' K';
+         return String(c);
+      }
+
+      function onCodeInput() {
+         var wc  = countWildcards();
+         var badge = $('wcBadge');
+         var msg   = $('wcMsg');
+         badge.textContent = wc + (wc === 1 ? ' wildcard' : ' wildcards') +
+                             ' · ~' + fmtCombos(wc) + ' combinations';
+         badge.className = 'rw-wc-badge' +
+            (wc >= 9 ? ' rw-wc-heavy' : wc >= 8 ? ' rw-wc-warn' : '');
+         msg.textContent = wc >= 9 ? 'Very many combinations — may be extremely slow' :
+                           wc >= 8 ? 'Large search space — may take 30+ seconds'        : '';
+         validateCodes();
+      }
+
+      function validateCodes() {
+         var allOk = true;
+         ['codeA', 'codeB', 'codeC'].forEach(function (id) {
+            var el = $(id);
+            var v  = el.value;
+            var ok = v.length === 6 && /^[0-9?]+$/.test(v);
+            // Only show red when the user has typed something that is wrong
+            el.classList.toggle('rw-invalid', v.length > 0 && !ok);
+            if (!ok) allOk = false;
+         });
+         return allOk;
+      }
+
+      // ── Parse a code string into a 6-element array (null = wildcard) ───────
+      function parseCode(str) {
+         var arr = [];
+         for (var i = 0; i < 6; i++) {
+            var ch = str[i] || '?';
+            arr.push(ch === '?' ? null : parseInt(ch, 10));
+         }
+         return arr;
+      }
+
+      // ── Solve ──────────────────────────────────────────────────────────────
+      function onSolve() {
+         if (!validateCodes()) {
+            alert('Each code must be exactly 6 characters (digits 0–9 or ?).');
+            return;
+         }
+
+         var ref = ReverseWherigoLogic.parseDDM($('refCoord').value);
+         if (!ref) {
+            alert('Could not parse the posted coordinate.\nTry: N 45 39.257 W 122 56.923');
+            return;
+         }
+
+         var maxDist = parseFloat($('maxDist').value);
+         var unit    = $('distUnit').value;
+         if (isNaN(maxDist) || maxDist <= 0) {
+            alert('Max distance must be a positive number.');
+            return;
+         }
+         var maxKm = (unit === 'mi') ? maxDist * 1.60934 : maxDist;
+
+         if (worker) { worker.terminate(); worker = null; }
+         lastResults = [];
+         setBusy(true);
+         setStatus('Searching…', 0);
+         renderResults([], unit);
+
+         var savedUnit = unit;
+         worker = new Worker('reversewherigo-worker.js?v=5');
+
+         worker.onmessage = function (e) {
+            var msg = JSON.parse(e.data);
+            if (msg.results) lastResults = msg.results;
+
+            if (msg.status === 'progress') {
+               setStatus(
+                  'Checked ' + msg.checked.toLocaleString() + ' / ' +
+                  msg.total.toLocaleString() + ' · ' + msg.found + ' found',
+                  msg.checked / msg.total
+               );
+               renderResults(lastResults, savedUnit);
+
+            } else { // done
+               lastResults = msg.results || [];
+               lastResults.sort(function (a, b) { return a.distKm - b.distKm; });
+               renderResults(lastResults, savedUnit);
+               var tail = msg.stopped ? ' (stopped early)'
+                        : msg.limitReached ? ' — limit reached, showing first 100 only'
+                        : '';
+               setStatus(
+                  'Done — ' + msg.checked.toLocaleString() + ' combinations checked · ' +
+                  msg.found + ' result' + (msg.found !== 1 ? 's' : '') + tail,
+                  1
+               );
+               setBusy(false);
+               worker.terminate(); worker = null;
+               trackEvent('solve', countWildcards() + 'wc', msg.found + 'hits');
+            }
+         };
+
+         worker.postMessage(JSON.stringify({
+            codeA: parseCode($('codeA').value),
+            codeB: parseCode($('codeB').value),
+            codeC: parseCode($('codeC').value),
+            refLat: ref.lat,
+            refLon: ref.lon,
+            maxKm:  maxKm,
+            dedupMode: $('dedupMode').value
+         }));
+      }
+
+      function onStop() {
+         if (worker) { worker.terminate(); worker = null; }
+         lastResults.sort(function (a, b) { return a.distKm - b.distKm; });
+         renderResults(lastResults, $('distUnit').value);
+         setStatus(
+            'Stopped · ' + lastResults.length + ' result' +
+            (lastResults.length !== 1 ? 's' : '') + ' found so far',
+            0
+         );
+         setBusy(false);
+      }
+
+      // ── UI helpers ─────────────────────────────────────────────────────────
+      function setBusy(busy) {
+         $('btnSolve').disabled = busy;
+         $('btnStop').disabled  = !busy;
+      }
+
+      function setStatus(text, fraction) {
+         $('rwStatus').textContent = text;
+         $('rwProgressFill').style.width =
+            (Math.min(1, Math.max(0, fraction || 0)) * 100).toFixed(1) + '%';
+      }
+
+      function renderResults(results, unit) {
+         var tbody = $('rwTableBody');
+         var isMi  = (unit === 'mi');
+         if (!results || results.length === 0) {
+            tbody.innerHTML = '<tr><td class="rw-empty" colspan="7">No results found yet.</td></tr>';
+            return;
+         }
+         var html = results.map(function (r, i) {
+            var dist  = isMi
+               ? (r.distKm / 1.60934).toFixed(2) + '&nbsp;mi'
+               : r.distKm.toFixed(2) + '&nbsp;km';
+            var coord = ReverseWherigoLogic.dd2ddm(r.lat, r.lon);
+            return '<tr>' +
+               '<td class="rw-mono">'  + (i + 1)   + '</td>' +
+               '<td class="rw-mono">'  + r.codeA    + '</td>' +
+               '<td class="rw-mono">'  + r.codeB    + '</td>' +
+               '<td class="rw-mono">'  + r.codeC    + '</td>' +
+               '<td>'                  + r.alg      + '</td>' +
+               '<td class="rw-coord">' + coord      + '</td>' +
+               '<td class="rw-mono">'  + dist       + '</td>' +
+               '</tr>';
+         }).join('');
+         tbody.innerHTML = html;
+      }
+
+      function copyCoords() {
+         if (!lastResults.length) { alert('No results to copy.'); return; }
+         var lines = lastResults.map(function (r) {
+            return ReverseWherigoLogic.dd2ddm(r.lat, r.lon);
+         }).join('\n');
+         var done = function () {
+            var s = $('copyStatus');
+            s.textContent = 'Copied!';
+            setTimeout(function () { s.textContent = ''; }, 1800);
+         };
+         if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(lines).then(done, fallback);
+         } else {
+            fallback();
+         }
+         function fallback() {
+            var ta = document.createElement('textarea');
+            ta.value = lines;
+            document.body.appendChild(ta);
+            ta.select();
+            document.execCommand('copy');
+            document.body.removeChild(ta);
+            done();
+         }
+      }
+
+      function page_init() {
+         HamburgerMenu_Init();
+         $('btnStop').disabled = true;
+         ['codeA', 'codeB', 'codeC'].forEach(function (id) {
+            $(id).addEventListener('input', onCodeInput);
+         });
+         onCodeInput();
+      }
+   </script>
+</head>
+
+<body class="nltm-page" onload="page_init()">
+
+   <!-- Top navigation / hamburger menu -->
+   <div class="topnav">
+      <div class="nltm-tool-header" id="FrameHeader">
+         <span class="nltm-tool-title">Reverse Wherigo</span>
+         <span class="nltm-tool-sub">Now Listen To Me Geocacher</span>
+         <div class="nltm-header-right">
+            <span class="nltm-header-samples-label">Try a sample:</span>
+            <button class="nltm-header-sample" onclick="onSample(1)"
+                    title="Algorithm 1 — last digit of each code is unknown">1 · Alg&nbsp;1</button>
+            <button class="nltm-header-sample" onclick="onSample(2)"
+                    title="Algorithm 2 — last digit of each code is unknown">2 · Alg&nbsp;2</button>
+            <button class="nltm-header-sample" onclick="onSample(3)"
+                    title="Proximity dedup — coordinates within 30 ft merged into one">3 · 30&nbsp;ft</button>
+         </div>
+      </div>
+      <div id="myLinks"></div>
+      <a href="javascript:void(0);" class="icon" onclick="HamburgerMenu_Open()">
+         <i class="fa fa-bars"></i>
+      </a>
+   </div>
+
+   <main class="rw-main">
+
+      <!-- ── Inputs ──────────────────────────────────────────────────────── -->
+      <section class="nltm-card">
+
+         <span class="rw-section-label">Posted coordinate &amp; search radius</span>
+
+         <div class="rw-ref-row">
+            <div class="rw-ref-coord">
+               <label for="refCoord">Posted coordinate</label>
+               <input class="nltm-input" type="text" id="refCoord"
+                      placeholder="N 45 39.257 W 122 56.923"
+                      title="Accepts DDM (N 45 39.257 W 122 56.923) or decimal degrees">
+            </div>
+            <div class="rw-ref-dist">
+               <label>Max distance</label>
+               <div class="rw-dist-inputs">
+                  <input class="nltm-input rw-dist-num" type="number"
+                         id="maxDist" value="2" min="0.1" step="0.5">
+                  <select class="nltm-input rw-dist-unit" id="distUnit">
+                     <option value="mi">mi</option>
+                     <option value="km">km</option>
+                  </select>
+               </div>
+            </div>
+         </div>
+
+         <span class="rw-section-label">Waldmeister codes</span>
+         <p style="font-size:var(--nltm-fs-2);color:var(--nltm-muted);margin-bottom:var(--nltm-sp-3);">
+            Enter each 6-digit code. Replace unknown digits with&nbsp;<strong>?</strong>.
+            B3 and C3 (3rd digit of codes B&nbsp;&amp;&nbsp;C) are structural dummies — feel free to wildcard them.
+         </p>
+
+         <div class="rw-codes-row">
+            <div class="rw-code-field">
+               <label for="codeA">Code A</label>
+               <input class="nltm-input rw-code-input" type="text" id="codeA"
+                      maxlength="6" spellcheck="false" placeholder="??????">
+            </div>
+            <div class="rw-code-field">
+               <label for="codeB">Code B</label>
+               <input class="nltm-input rw-code-input" type="text" id="codeB"
+                      maxlength="6" spellcheck="false" placeholder="??????">
+            </div>
+            <div class="rw-code-field">
+               <label for="codeC">Code C</label>
+               <input class="nltm-input rw-code-input" type="text" id="codeC"
+                      maxlength="6" spellcheck="false" placeholder="??????">
+            </div>
+         </div>
+
+         <div class="rw-wc-row">
+            <span id="wcBadge" class="rw-wc-badge">0 wildcards · ~1 combination</span>
+            <span id="wcMsg"   class="rw-wc-msg"></span>
+            <div class="rw-dedup-select">
+               <label for="dedupMode">Filter duplicates</label>
+               <select class="nltm-input" id="dedupMode">
+                  <option value="off">Off — show all</option>
+                  <option value="unique">Unique coordinates only</option>
+                  <option value="proximity">Within 30 ft</option>
+               </select>
+            </div>
+         </div>
+
+         <div class="rw-actions">
+            <button class="nltm-button" id="btnSolve" onclick="onSolve()">Solve</button>
+            <button class="nltm-button rw-btn-stop" id="btnStop" onclick="onStop()">Stop</button>
+            <span id="sampleCaption"
+                  style="font-size:var(--nltm-fs-2);color:var(--nltm-muted);font-style:italic;"></span>
+         </div>
+
+      </section>
+
+      <!-- ── Results ─────────────────────────────────────────────────────── -->
+      <section class="nltm-card">
+
+         <div class="rw-progress-wrap">
+            <div id="rwStatus" class="rw-status">Enter codes above and press Solve.</div>
+            <div class="rw-progress-bar">
+               <div id="rwProgressFill" class="rw-progress-fill"></div>
+            </div>
+         </div>
+
+         <div class="rw-results-wrap">
+            <table class="rw-table" aria-label="Solver results">
+               <thead>
+                  <tr>
+                     <th>#</th>
+                     <th>Code A</th>
+                     <th>Code B</th>
+                     <th>Code C</th>
+                     <th>Alg</th>
+                     <th>Coordinate (DDM)</th>
+                     <th>Distance</th>
+                  </tr>
+               </thead>
+               <tbody id="rwTableBody">
+                  <tr><td class="rw-empty" colspan="7">No results yet.</td></tr>
+               </tbody>
+            </table>
+         </div>
+
+         <div class="rw-copy-row">
+            <button class="nltm-button" onclick="copyCoords()">Copy Coordinates</button>
+            <span id="copyStatus" class="rw-copy-status"></span>
+         </div>
+
+      </section>
+
+   </main>
+</body>
+</html>

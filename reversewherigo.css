@@ -1,0 +1,168 @@
+/* Reverse Wherigo Solver — tool-specific layout */
+
+.rw-main {
+  max-width: 780px;
+  margin: 0 auto;
+  padding: var(--nltm-sp-4) var(--nltm-sp-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--nltm-sp-4);
+}
+
+/* ── Card headings ────────────────────────────────────── */
+.rw-section-label {
+  display: block;
+  font-family: var(--nltm-font-body);
+  font-size: var(--nltm-fs-2);
+  font-weight: 600;
+  color: var(--nltm-muted);
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  margin-bottom: var(--nltm-sp-2);
+  margin-top: var(--nltm-sp-4);
+}
+.rw-section-label:first-child { margin-top: 0; }
+
+/* ── Reference row ────────────────────────────────────── */
+.rw-ref-row {
+  display: flex;
+  gap: var(--nltm-sp-3);
+  align-items: flex-end;
+  flex-wrap: wrap;
+}
+.rw-ref-coord { flex: 1 1 380px; }
+.rw-ref-coord label,
+.rw-ref-dist label { display: block; font-size: var(--nltm-fs-2); font-weight: 500; margin-bottom: 4px; }
+.rw-ref-dist { display: flex; flex-direction: column; }
+.rw-dist-inputs { display: flex; gap: 6px; align-items: center; }
+.rw-dist-num { width: 76px; }
+.rw-dist-unit { width: 64px; }
+
+/* ── Code inputs ──────────────────────────────────────── */
+.rw-codes-row {
+  display: flex;
+  gap: var(--nltm-sp-3);
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+.rw-code-field { display: flex; flex-direction: column; gap: 4px; flex: 1 1 0; min-width: 100px; }
+.rw-code-field label { font-size: var(--nltm-fs-2); font-weight: 600; text-align: center; }
+.rw-code-input {
+  font-family: var(--nltm-font-mono);
+  font-size: 1.35rem;
+  font-weight: 600;
+  letter-spacing: .18em;
+  text-align: center;
+  text-transform: uppercase;
+}
+.rw-code-input.rw-invalid { border-color: #c0392b !important; background: #fdecea !important; }
+
+/* ── Wildcard counter ─────────────────────────────────── */
+.rw-wc-row {
+  display: flex;
+  align-items: center;
+  gap: var(--nltm-sp-2);
+  margin-top: var(--nltm-sp-1);
+  font-size: var(--nltm-fs-2);
+  color: var(--nltm-muted);
+  flex-wrap: wrap;
+}
+.rw-wc-badge {
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 20px;
+  background: var(--nltm-primary-soft);
+  color: var(--nltm-primary-deep);
+}
+.rw-wc-warn  { color: #b7600a; background: #fff3cd; }
+.rw-wc-heavy { color: #8a1a1a; background: #fdecea; }
+.rw-wc-msg { font-style: italic; }
+.rw-dedup-select { display: flex; align-items: center; gap: 6px; margin-left: auto; }
+.rw-dedup-select label { font-size: var(--nltm-fs-2); font-weight: 500; white-space: nowrap; color: var(--nltm-muted); }
+.rw-dedup-select select { font-size: var(--nltm-fs-2); padding: 2px 6px; }
+
+/* ── Action buttons ───────────────────────────────────── */
+.rw-actions {
+  display: flex;
+  gap: var(--nltm-sp-2);
+  margin-top: var(--nltm-sp-4);
+  align-items: center;
+  flex-wrap: wrap;
+}
+.rw-btn-stop {
+  background: #c0392b;
+}
+.rw-btn-stop:hover { background: #922b21; }
+button:disabled { opacity: .45; cursor: default; }
+
+/* ── Progress bar ─────────────────────────────────────── */
+.rw-progress-wrap { margin-bottom: var(--nltm-sp-3); }
+.rw-progress-bar {
+  height: 6px;
+  background: var(--nltm-primary-soft);
+  border-radius: 3px;
+  overflow: hidden;
+  margin-top: 6px;
+}
+.rw-progress-fill {
+  height: 100%;
+  background: var(--nltm-primary);
+  border-radius: 3px;
+  width: 0%;
+  transition: width .25s ease;
+}
+.rw-status {
+  font-size: var(--nltm-fs-2);
+  color: var(--nltm-muted);
+  min-height: 1.4em;
+}
+
+/* ── Results table ────────────────────────────────────── */
+.rw-results-wrap {
+  overflow-x: auto;
+  border-radius: var(--nltm-radius);
+  border: 1px solid var(--nltm-line);
+}
+.rw-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--nltm-fs-2);
+}
+.rw-table th {
+  background: var(--nltm-primary);
+  color: #fff;
+  padding: 7px 10px;
+  text-align: left;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.rw-table td {
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--nltm-line);
+  white-space: nowrap;
+}
+.rw-table tr:last-child td { border-bottom: none; }
+.rw-table tr:nth-child(even) td { background: var(--nltm-surface-2); }
+.rw-table .rw-mono { font-family: var(--nltm-font-mono); }
+.rw-table .rw-coord { font-family: var(--nltm-font-mono); color: var(--nltm-primary-deep); }
+.rw-empty {
+  text-align: center;
+  color: var(--nltm-muted);
+  padding: var(--nltm-sp-5) !important;
+  font-style: italic;
+}
+
+/* ── Copy button row ──────────────────────────────────── */
+.rw-copy-row {
+  display: flex;
+  gap: var(--nltm-sp-2);
+  align-items: center;
+  margin-top: var(--nltm-sp-3);
+}
+.rw-copy-status { font-size: var(--nltm-fs-2); color: var(--nltm-success); }
+
+/* ── Responsive tweaks ────────────────────────────────── */
+@media (max-width: 500px) {
+  .rw-codes-row { gap: var(--nltm-sp-2); }
+  .rw-code-input { font-size: 1.1rem; letter-spacing: .1em; }
+}
